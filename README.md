@@ -50,3 +50,4 @@ This removes all resources created from the manifests in this directory.
 
 - Adjust resource requests/limits and MongoDB storage sizes before deploying to production.
 - If you use the LoadBalancer service, confirm your cloud provider provisions external IPs automatically; otherwise fall back to the NodePort service and manage ingress manually.
+
