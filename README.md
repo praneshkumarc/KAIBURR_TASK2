@@ -1,5 +1,4 @@
-# KAIBURR_TASK2
-# KAIBURR Task Runner – Kubernetes Manifests
+# KAIBURR Task Runner - Kubernetes Manifests
 
 This folder contains all Kubernetes artifacts needed to deploy the Task Runner stack.
 
@@ -35,7 +34,38 @@ Monitor the rollout:
 
 ```bash
 kubectl get pods -n task-runner
-kubectl logs deployment/task-runner -n task-runner
+kubectl logs deployment/task-runner-api -n task-runner
+```
+
+## Local Minikube Walkthrough
+
+The following commands capture the full workflow when you build the backend image directly inside a Minikube cluster and exercise the API from your host.
+
+```bash
+# Build image inside your local cluster’s Docker (Minikube example)
+eval $(minikube docker-env)
+cd task-runner-api
+mvn -q -DskipTests package
+docker build -t task-runner-api:podrunner .
+
+# Apply manifests
+cd ../k8s
+kubectl apply -f namespace.yaml -f rbac.yaml -f mongo-statefulset.yaml \
+              -f app-deployment.yaml -f app-service-nodeport.yaml
+
+# Show running pods + services (screenshot)
+kubectl get pods -n task-runner
+kubectl get svc  -n task-runner
+
+# Hit an endpoint from host (screenshot)
+BASE=http://$(minikube ip):30080/api
+curl -s $BASE/tasks | jq
+
+# Create and run (screenshot)
+curl -X PUT "$BASE/tasks" -H 'Content-Type: application/json' -d '{
+  "id":"123","name":"Hello","owner":"You","command":"echo hello from busybox"
+}'
+curl -s -X PUT "$BASE/tasks/123/executions" | jq
 ```
 
 ## Tearing Everything Down
@@ -50,6 +80,7 @@ This removes all resources created from the manifests in this directory.
 
 - Adjust resource requests/limits and MongoDB storage sizes before deploying to production.
 - If you use the LoadBalancer service, confirm your cloud provider provisions external IPs automatically; otherwise fall back to the NodePort service and manage ingress manually.
+
 <img width="1487" height="179" alt="Screenshot 2025-10-16 111044" src="https://github.com/user-attachments/assets/7d236d2f-9343-4f80-bf31-22f1976fbf9f" />
 <img width="1246" height="396" alt="Screenshot 2025-10-16 111105" src="https://github.com/user-attachments/assets/27c70c16-373a-48ab-851e-8036679a7e39" />
 
