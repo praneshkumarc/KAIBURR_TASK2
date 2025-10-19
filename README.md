@@ -1,8 +1,8 @@
-# KAIBURR Task Runner - Kubernetes Manifests
+# KAIBURR Task Runner - Minikube Guide
 
-This folder contains all Kubernetes artifacts needed to deploy the Task Runner stack.
+This folder contains all Kubernetes manifests required to run the Task Runner stack on a local Minikube cluster.
 
-> **Note:** Inside the repository every top-level entry **other than** `k8s/` belongs to the Spring Boot backend module. Treat those files and folders (`src/`, `target/`, `pom.xml`, `Dockerfile`, etc.) as a single backend project; `k8s/` can be consumed independently when you are ready to deploy to a cluster.
+> **Note:** Everything outside `k8s/` belongs to the Spring Boot backend project. Build/push the backend container image from that module before deploying if you are not building inside Minikube.
 
 ## Contents
 
@@ -12,69 +12,77 @@ This folder contains all Kubernetes artifacts needed to deploy the Task Runner s
 | `rbac.yaml` | Service account and RBAC bindings used by the backend. |
 | `mongo-statefulset.yaml` | MongoDB StatefulSet, headless service, and persistent volume claims. |
 | `app-deployment.yaml` | Deployment and ClusterIP service for the Task Runner backend. |
-| `app-service-nodeport.yaml` | Optional NodePort exposure for on-prem access. |
+| `app-service-nodeport.yaml` | NodePort exposure of the backend service (used for Minikube). |
 | `app-service-loadbalancer.yaml` | Optional LoadBalancer service for managed clouds. |
 
-## Prerequisites
+## 1. Prepare Minikube
 
-- A Kubernetes cluster (v1.26+) and `kubectl` configured to talk to it.
-- Container image for the backend pushed to a registry accessible by the cluster. Update `app-deployment.yaml` with the correct image reference before applying.
+```bash
+minikube start            # launch or resume the VM
+minikube status           # should show kubelet/apiserver/kubeconfig = Running
+kubectl config use-context minikube
+kubectl cluster-info      # verifies kubectl can reach the API server
+```
 
-## How to Deploy
+If `cluster-info` returns `connection refused`, fix Minikube before continuing (restart Docker/Hyper-V, rerun `minikube start`, etc.).
+
+## 2. Build the Backend Image Inside Minikube (optional)
+
+If you want to avoid pushing to an external registry, build using Minikube’s Docker daemon:
+
+```bash
+eval "$(minikube docker-env)"
+cd ../backend
+mvn -q -DskipTests package
+docker build -t task-runner-api:podrunner .
+cd ../k8s
+```
+
+> Run `eval "$(minikube docker-env -u)"` later to restore your host Docker configuration.
+
+If you already have an image in a registry, just update `app-deployment.yaml` with that reference and skip the build.
+
+## 3. Deploy the Manifests
 
 ```bash
 kubectl apply -f namespace.yaml
 kubectl apply -f rbac.yaml
 kubectl apply -f mongo-statefulset.yaml
 kubectl apply -f app-deployment.yaml
-kubectl apply -f app-service-nodeport.yaml      # or use app-service-loadbalancer.yaml
+kubectl apply -f app-service-nodeport.yaml      # exposes NodePort 30080
 ```
 
-Monitor the rollout:
+## 4. Verify Pods and Services
 
 ```bash
 kubectl get pods -n task-runner
+kubectl get svc  -n task-runner
 kubectl logs deployment/task-runner-api -n task-runner
 ```
 
-## Local Minikube Walkthrough
+Wait until MongoDB and the backend pod are both in `Running` state before exercising the API.
 
-The following commands capture the full workflow when you build the backend image directly inside a Minikube cluster and exercise the API from your host.
+## 5. Call the API from the Host
 
 ```bash
-# Build image inside your local cluster’s Docker (Minikube example)
-eval $(minikube docker-env)
-cd task-runner-api
-mvn -q -DskipTests package
-docker build -t task-runner-api:podrunner .
-
-# Apply manifests
-cd ../k8s
-kubectl apply -f namespace.yaml -f rbac.yaml -f mongo-statefulset.yaml \
-              -f app-deployment.yaml -f app-service-nodeport.yaml
-
-# Show running pods + services (screenshot)
-kubectl get pods -n task-runner
-kubectl get svc  -n task-runner
-
-# Hit an endpoint from host (screenshot)
 BASE=http://$(minikube ip):30080/api
 curl -s $BASE/tasks | jq
 
-# Create and run (screenshot)
 curl -X PUT "$BASE/tasks" -H 'Content-Type: application/json' -d '{
   "id":"123","name":"Hello","owner":"You","command":"echo hello from busybox"
 }'
 curl -s -X PUT "$BASE/tasks/123/executions" | jq
 ```
 
-## Tearing Everything Down
+If the request fails, double-check the NodePort (`kubectl get svc task-runner-api -n task-runner`) and confirm your firewall allows traffic to port `30080`.
+
+## 6. Tear Everything Down
 
 ```bash
 kubectl delete -f .
 ```
 
-This removes all resources created from the manifests in this directory.
+This command removes the namespace, RBAC, MongoDB StatefulSet, deployment, and services created from this directory.
 
 <img width="1246" height="396" alt="Screenshot 2025-10-16 111105" src="https://github.com/user-attachments/assets/27c70c16-373a-48ab-851e-8036679a7e39" />
 <img width="1487" height="179" alt="Screenshot 2025-10-16 111044" src="https://github.com/user-attachments/assets/7d236d2f-9343-4f80-bf31-22f1976fbf9f" />
